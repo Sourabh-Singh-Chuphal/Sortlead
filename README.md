@@ -146,3 +146,39 @@ Deploy the Next.js app to Vercel:
    - `NEXT_PUBLIC_BACKEND_URL`: Set this to your Render backend URL (e.g., `https://crm-csv-importer-backend.onrender.com`).
 5. Click **Deploy**. Vercel will build and host the frontend. Open the provided Vercel URL to access your live production app!
 
+---
+
+### 4. Deploy to Google Cloud Platform (GCP)
+
+Both the frontend and backend can be hosted serverless on **Google Cloud Run** using the provided Dockerfiles.
+
+#### Step A: Configure gcloud CLI
+Ensure you are logged in and targeting your active project:
+```bash
+gcloud auth login
+gcloud config set project amdproject-494006
+```
+
+#### Step B: Deploy Backend to Cloud Run
+Run the deployment command from the root of the project. Replace `YOUR_ANTHROPIC_API_KEY` with your Anthropic Claude API Key:
+```bash
+gcloud run deploy crm-csv-importer-backend \
+  --source backend/ \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars="ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY"
+```
+*Once finished, this command will output your backend Service URL (e.g., `https://crm-csv-importer-backend-xxxxxx-uc.a.run.app`).*
+
+#### Step C: Deploy Frontend to Cloud Run
+Run the deployment command for the Next.js app. Pass the backend URL as a build-time argument:
+```bash
+gcloud run deploy crm-csv-importer-frontend \
+  --source frontend/ \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --build-arg="NEXT_PUBLIC_BACKEND_URL=https://crm-csv-importer-backend-xxxxxx-uc.a.run.app"
+```
+*Once finished, this command will output the frontend Service URL. Open it in your browser to access the live app on Google Cloud!*
+
+
