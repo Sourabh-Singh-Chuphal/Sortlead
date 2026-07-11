@@ -1,0 +1,29 @@
+﻿services:
+  # Backend - Express + TypeScript API
+  - type: web
+    name: sortlead-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  # Frontend - Next.js
+  - type: web
+    name: sortlead-frontend
+    runtime: node
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npx next start -p 10000
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_BACKEND_URL
+        fromService:
+          name: sortlead-backend
+          type: web
+          property: host
