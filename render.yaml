@@ -1,5 +1,5 @@
 ﻿services:
-  # Backend - Express + TypeScript API
+  # Backend - Express + TypeScript API (Gemini-powered)
   - type: web
     name: sortlead-backend
     runtime: node
@@ -9,7 +9,7 @@
     envVars:
       - key: NODE_ENV
         value: production
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
 
   # Frontend - Next.js

@@ -1,17 +1,11 @@
-import Anthropic from '@anthropic-ai/sdk';
-import pRetry from 'p-retry';
+﻿import pRetry from 'p-retry';
 import dotenv from 'dotenv';
 import { CrmRecordSchema, type CrmRecord } from './validator.js';
 
 dotenv.config();
 
-const apiKey = process.env.ANTHROPIC_API_KEY;
 const geminiApiKey = process.env.GEMINI_API_KEY;
-const modelName = process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022';
-
-const anthropic = new Anthropic({
-  apiKey: apiKey || '',
-});
+const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
 export interface SkipRecord {
   row: any;
@@ -33,76 +27,21 @@ Here are the EXTRACTION RULES you must follow verbatim:
 - created_at must parse successfully with JavaScript's \`new Date(created_at)\`.
 - crm_note holds: remarks, follow-up notes, extra comments, extra phone numbers, extra email addresses, anything that doesn't fit another field.
 - If multiple emails exist, use the first as \`email\` and append the rest to crm_note. Same rule for multiple mobile numbers.
-- Each record must stay a single CSV-safe row — escape any necessary line breaks (e.g. \\n).
-- Skip a record entirely if it has neither an email nor a mobile number; include the skip reason in the response.
+- Skip a record entirely if it has neither an email nor a mobile number; omit it from the output entirely.
 
 Instructions:
 1. For each item in the input array, extract the fields according to the schema.
 2. Maintain the mapping of the raw row by returning the correct \`_original_index\` corresponding to the index of the row in the input array.
 3. Be confident in your extraction. If a value does not fit any schema field, add it to \`crm_note\`.
-4. Return the results by calling the \`extract_crm_records\` tool.
+4. Return a JSON object with a "records" array.
 `;
 
-const extractTool = {
-  name: 'extract_crm_records',
-  description: 'Extract and normalize CRM records from arbitrary raw CSV rows.',
-  input_schema: {
-    type: 'object' as const,
-    properties: {
-      records: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            created_at: {
-              type: 'string',
-              description: 'Date and time of creation. Must be parseable by JavaScript Date constructor.'
-            },
-            name: { type: 'string', description: 'Name of the contact or lead.' },
-            email: { type: 'string', description: 'Primary email address. If multiple exist, use the first and append the rest to crm_note.' },
-            country_code: { type: 'string', description: 'Country dialing code, e.g. +1, +91.' },
-            mobile_without_country_code: { type: 'string', description: 'Mobile phone number without country dial code or symbols.' },
-            company: { type: 'string', description: 'Company name.' },
-            city: { type: 'string', description: 'City.' },
-            state: { type: 'string', description: 'State or region.' },
-            country: { type: 'string', description: 'Country name.' },
-            lead_owner: { type: 'string', description: 'Name of the lead owner.' },
-            crm_status: {
-              type: 'string',
-              description: 'Must be one of: GOOD_LEAD_FOLLOW_UP, DID_NOT_CONNECT, BAD_LEAD, SALE_DONE. If not matching these, leave blank.'
-            },
-            crm_note: {
-              type: 'string',
-              description: 'Holds remarks, follow-ups, additional emails/mobiles, and metadata not fitting other fields.'
-            },
-            data_source: {
-              type: 'string',
-              description: 'Must be one of: leads_on_demand, meridian_tower, eden_park, varah_swamy, sarjapur_plots. If not matching these, leave blank.'
-            },
-            possession_time: { type: 'string', description: 'Timeline or date/time for possession or inquiry interest.' },
-            description: { type: 'string', description: 'General description, notes, or messages.' },
-            _original_index: {
-              type: 'integer',
-              description: 'The 0-based index of the raw row in the input array. This is required.'
-            }
-          },
-          required: ['_original_index']
-        }
-      }
-    },
-    required: ['records']
-  }
-} as const;
-
 /**
- * Call Claude to extract a batch of raw records.
- * Retries up to 2x using p-retry.
+ * Local rule-based fallback extractor used when GEMINI_API_KEY is not set.
  */
 function localMockExtract(batchWithIndex: any[]): any[] {
   return batchWithIndex.map(row => {
-    const record: any = {
-      _original_index: row._original_index
-    };
+    const record: any = { _original_index: row._original_index };
 
     const findValue = (keywords: string[], excludeKeywords: string[] = []) => {
       const matchedKey = Object.keys(row).find(key => {
@@ -114,7 +53,7 @@ function localMockExtract(batchWithIndex: any[]): any[] {
 
     record.name = findValue(['name', 'fullname', 'first_name', 'lead']);
     record.email = findValue(['email', 'mail']);
-    
+
     record.country_code = findValue(['country code', 'country_code', 'dial']);
     const phoneVal = findValue(['phone', 'mobile', 'contact', 'number', 'phn'], ['code']);
     if (phoneVal) {
@@ -136,21 +75,15 @@ function localMockExtract(batchWithIndex: any[]): any[] {
     record.state = findValue(['state', 'province', 'region']);
     record.country = findValue(['country', 'nation'], ['code']);
     record.lead_owner = findValue(['owner', 'agent', 'assignee']);
-    
+
     const statusVal = findValue(['status', 'crm_status']);
     if (statusVal) {
       const lower = statusVal.toLowerCase();
-      if (lower.includes('follow') || lower.includes('good')) {
-        record.crm_status = 'GOOD_LEAD_FOLLOW_UP';
-      } else if (lower.includes('did not') || lower.includes('connect')) {
-        record.crm_status = 'DID_NOT_CONNECT';
-      } else if (lower.includes('bad') || lower.includes('junk')) {
-        record.crm_status = 'BAD_LEAD';
-      } else if (lower.includes('sale') || lower.includes('done') || lower.includes('won')) {
-        record.crm_status = 'SALE_DONE';
-      } else {
-        record.crm_status = '';
-      }
+      if (lower.includes('follow') || lower.includes('good')) record.crm_status = 'GOOD_LEAD_FOLLOW_UP';
+      else if (lower.includes('did not') || lower.includes('connect')) record.crm_status = 'DID_NOT_CONNECT';
+      else if (lower.includes('bad') || lower.includes('junk')) record.crm_status = 'BAD_LEAD';
+      else if (lower.includes('sale') || lower.includes('done') || lower.includes('won')) record.crm_status = 'SALE_DONE';
+      else record.crm_status = '';
     } else {
       record.crm_status = '';
     }
@@ -158,35 +91,24 @@ function localMockExtract(batchWithIndex: any[]): any[] {
     const sourceVal = findValue(['source', 'data_source', 'medium']);
     if (sourceVal) {
       const lower = sourceVal.toLowerCase();
-      if (lower.includes('demand') || lower.includes('leads')) {
-        record.data_source = 'leads_on_demand';
-      } else if (lower.includes('meridian') || lower.includes('tower')) {
-        record.data_source = 'meridian_tower';
-      } else if (lower.includes('eden') || lower.includes('park')) {
-        record.data_source = 'eden_park';
-      } else if (lower.includes('varah') || lower.includes('swamy')) {
-        record.data_source = 'varah_swamy';
-      } else if (lower.includes('sarjapur') || lower.includes('plot')) {
-        record.data_source = 'sarjapur_plots';
-      } else {
-        record.data_source = '';
-      }
+      if (lower.includes('demand') || lower.includes('leads')) record.data_source = 'leads_on_demand';
+      else if (lower.includes('meridian') || lower.includes('tower')) record.data_source = 'meridian_tower';
+      else if (lower.includes('eden') || lower.includes('park')) record.data_source = 'eden_park';
+      else if (lower.includes('varah') || lower.includes('swamy')) record.data_source = 'varah_swamy';
+      else if (lower.includes('sarjapur') || lower.includes('plot')) record.data_source = 'sarjapur_plots';
+      else record.data_source = '';
     } else {
       record.data_source = '';
     }
 
-    record.possession_time = findValue(['possession', 'time', 'timeline', 'when']);
+    record.possession_time = findValue(['possession', 'timeline', 'when']);
     record.description = findValue(['desc', 'msg', 'message', 'query']);
     record.crm_note = findValue(['note', 'remark', 'comment', 'extra']);
 
     const dateVal = findValue(['date', 'created', 'time']);
     if (dateVal) {
       const d = new Date(dateVal);
-      if (!isNaN(d.getTime())) {
-        record.created_at = d.toISOString();
-      } else {
-        record.created_at = new Date().toISOString();
-      }
+      record.created_at = !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
     } else {
       record.created_at = new Date().toISOString();
     }
@@ -196,62 +118,61 @@ function localMockExtract(batchWithIndex: any[]): any[] {
 }
 
 /**
- * Call Gemini to extract a batch of raw records.
+ * Call Gemini Flash to extract and normalise a batch of raw CRM rows.
+ * Uses structured JSON output via responseSchema.
  */
 async function extractBatchWithGemini(batchWithIndex: any[]): Promise<any[]> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`;
 
   const prompt = `${SYSTEM_PROMPT}
 
 Here is the batch of raw records as JSON:
 ${JSON.stringify(batchWithIndex, null, 2)}
 
-You MUST extract and normalize each record into the target CRM schema, preserving the "_original_index" exactly for each item.`;
+Return a JSON object with a "records" array. Preserve the "_original_index" for each record exactly.`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{ text: prompt }]
-      }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: {
-            records: {
-              type: 'ARRAY',
-              description: 'Array of extracted CRM records matching the input items.',
-              items: {
-                type: 'OBJECT',
-                properties: {
-                  _original_index: { type: 'INTEGER', description: 'The exact _original_index matching the raw record.' },
-                  created_at: { type: 'STRING', description: 'Lead creation date.' },
-                  name: { type: 'STRING', description: 'Name of the contact/lead.' },
-                  email: { type: 'STRING', description: 'Primary email address.' },
-                  country_code: { type: 'STRING', description: 'Country dial code, e.g. +91.' },
-                  mobile_without_country_code: { type: 'STRING', description: 'Mobile phone number without dial code.' },
-                  company: { type: 'STRING', description: 'Company name.' },
-                  city: { type: 'STRING', description: 'City.' },
-                  state: { type: 'STRING', description: 'State.' },
-                  country: { type: 'STRING', description: 'Country.' },
-                  lead_owner: { type: 'STRING', description: 'Owner assigned.' },
-                  crm_status: { type: 'STRING', description: 'One of GOOD_LEAD_FOLLOW_UP, DID_NOT_CONNECT, BAD_LEAD, SALE_DONE, or empty.' },
-                  crm_note: { type: 'STRING', description: 'Overflow data, remarks, or notes.' },
-                  data_source: { type: 'STRING', description: 'One of leads_on_demand, meridian_tower, eden_park, varah_swamy, sarjapur_plots, or empty.' },
-                  possession_time: { type: 'STRING', description: 'Timeline or date of possession.' },
-                  description: { type: 'STRING', description: 'Additional description.' }
-                },
-                required: ['_original_index']
-              }
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          records: {
+            type: 'ARRAY',
+            description: 'Array of extracted CRM records.',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                _original_index: { type: 'INTEGER' },
+                created_at:      { type: 'STRING' },
+                name:            { type: 'STRING' },
+                email:           { type: 'STRING' },
+                country_code:    { type: 'STRING' },
+                mobile_without_country_code: { type: 'STRING' },
+                company:         { type: 'STRING' },
+                city:            { type: 'STRING' },
+                state:           { type: 'STRING' },
+                country:         { type: 'STRING' },
+                lead_owner:      { type: 'STRING' },
+                crm_status:      { type: 'STRING' },
+                crm_note:        { type: 'STRING' },
+                data_source:     { type: 'STRING' },
+                possession_time: { type: 'STRING' },
+                description:     { type: 'STRING' }
+              },
+              required: ['_original_index']
             }
           }
         }
       }
-    })
+    }
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
@@ -260,83 +181,41 @@ You MUST extract and normalize each record into the target CRM schema, preservin
   }
 
   const resJson: any = await response.json();
-  const text = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new Error('Gemini API returned an empty response candidate.');
-  }
+  const text = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Gemini API returned an empty response.');
 
   const parsed = JSON.parse(text);
   if (!parsed || !Array.isArray(parsed.records)) {
-    throw new Error('Gemini response did not contain records array.');
+    throw new Error('Gemini response did not contain a records array.');
   }
-
   return parsed.records;
 }
 
 /**
- * Call Claude or Gemini to extract a batch of raw records.
- * Retries up to 2x using p-retry.
+ * Route a batch to Gemini (with retry) or fall back to local rule extractor.
  */
 async function extractBatchWithRetry(batchWithIndex: any[]): Promise<any[]> {
-  if (geminiApiKey && geminiApiKey !== 'mock' && geminiApiKey !== 'local' && !geminiApiKey.startsWith('your_')) {
-    return pRetry(
-      () => extractBatchWithGemini(batchWithIndex),
-      {
-        retries: 2,
-        onFailedAttempt: (error) => {
-          console.warn(`Gemini API attempt ${error.attemptNumber} failed. Error: ${error.message}`);
-        }
-      }
-    );
-  }
+  const hasKey = geminiApiKey && geminiApiKey !== 'mock' && !geminiApiKey.startsWith('your_');
 
-  if (!apiKey || apiKey === 'mock' || apiKey === 'local' || apiKey.startsWith('your_')) {
-    console.warn('[WARNING] ANTHROPIC_API_KEY and GEMINI_API_KEY are not configured. Using local rule-based fallback extractor.');
+  if (!hasKey) {
+    console.warn('[WARNING] GEMINI_API_KEY is not set. Using local rule-based fallback extractor.');
     return localMockExtract(batchWithIndex);
   }
 
   return pRetry(
-    async () => {
-      const response = await anthropic.messages.create({
-        model: modelName,
-        max_tokens: 4000,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: `Here is the batch of raw records as JSON:\n${JSON.stringify(batchWithIndex, null, 2)}`
-          }
-        ],
-        tools: [extractTool],
-        tool_choice: { type: 'tool', name: 'extract_crm_records' }
-      });
-
-      const toolUseContent = response.content.find((c) => c.type === 'tool_use');
-      if (!toolUseContent || toolUseContent.type !== 'tool_use') {
-        throw new Error('Claude response did not contain the expected tool use block.');
-      }
-
-      const input = toolUseContent.input as any;
-      if (!input || !Array.isArray(input.records)) {
-        throw new Error('Claude response tool use input was invalid or missing records array.');
-      }
-
-      return input.records;
-    },
+    () => extractBatchWithGemini(batchWithIndex),
     {
       retries: 2,
       onFailedAttempt: (error) => {
-        console.warn(
-          `Anthropic API attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries remaining. Error: ${error.message}`
-        );
+        console.warn(`Gemini attempt ${error.attemptNumber} failed: ${error.message}. Retries left: ${error.retriesLeft}`);
       }
     }
   );
 }
 
 /**
- * Processes all CSV rows. Chunks them into batches, sends them to Claude, validates with Zod, and aggregates the results.
- * Supports a progress callback for streaming updates (e.g. SSE).
+ * Main entry point — processes all CSV rows in batches, validates each record
+ * with Zod, and returns the final ImportResult.
  */
 export async function processCsvImport(
   rawRows: any[],
@@ -345,112 +224,73 @@ export async function processCsvImport(
   const BATCH_SIZE = 25;
   const imported: CrmRecord[] = [];
   const skipped: SkipRecord[] = [];
-
   const totalBatches = Math.ceil(rawRows.length / BATCH_SIZE);
 
   for (let i = 0; i < rawRows.length; i += BATCH_SIZE) {
     const chunk = rawRows.slice(i, i + BATCH_SIZE);
     const currentBatchNum = Math.floor(i / BATCH_SIZE) + 1;
 
-    // Attach original index to raw rows for correlation
-    const batchWithIndex = chunk.map((row, index) => ({
-      ...row,
-      _original_index: i + index
-    }));
+    const batchWithIndex = chunk.map((row, index) => ({ ...row, _original_index: i + index }));
 
     let extractedRecords: any[] = [];
     let batchFailed = false;
-    let batchErrorReason = 'Unknown failure calling AI extraction';
+    let batchErrorReason = 'Unknown failure';
 
     try {
       extractedRecords = await extractBatchWithRetry(batchWithIndex);
     } catch (err: any) {
-      console.error(`Batch ${currentBatchNum}/${totalBatches} completely failed after retries:`, err);
+      console.error(`Batch ${currentBatchNum}/${totalBatches} failed after retries:`, err);
       batchFailed = true;
       batchErrorReason = err.message || String(err);
     }
 
     if (batchFailed) {
-      // If the entire batch failed (e.g. rate limit, API outage, etc.), we mark all records in the batch as skipped
       for (const item of batchWithIndex) {
-        skipped.push({
-          row: item,
-          reason: `AI processing failure: ${batchErrorReason}`
-        });
+        skipped.push({ row: item, reason: `AI processing failure: ${batchErrorReason}` });
       }
     } else {
-      // Process extracted records and correlate with input rows
       const extractedIndexes = new Set<number>();
 
       for (const record of extractedRecords) {
         const origIndex = record._original_index;
-        if (typeof origIndex !== 'number' || origIndex < i || origIndex >= i + chunk.length) {
-          continue; // Skip invalid indices
-        }
+        if (typeof origIndex !== 'number' || origIndex < i || origIndex >= i + chunk.length) continue;
 
         extractedIndexes.add(origIndex);
         const originalRow = rawRows[origIndex];
-
-        // Validate the record using Zod
         const validationResult = CrmRecordSchema.safeParse(record);
 
         if (validationResult.success) {
-          // Check line breaks and escape them in text fields
           const cleanRecord = { ...validationResult.data };
           for (const key of Object.keys(cleanRecord)) {
             const val = (cleanRecord as any)[key];
-            if (typeof val === 'string') {
-              (cleanRecord as any)[key] = val.replace(/\r?\n/g, '\\n');
-            }
+            if (typeof val === 'string') (cleanRecord as any)[key] = val.replace(/\r?\n/g, '\\n');
           }
           imported.push(cleanRecord);
         } else {
-          // Extract validation reasons
-          const errors = validationResult.error.errors;
-          const reason = errors.map((e) => `${e.path.join('.') || 'record'}: ${e.message}`).join('; ');
-          skipped.push({
-            row: originalRow,
-            reason
-          });
+          const reason = validationResult.error.errors.map(e => `${e.path.join('.') || 'record'}: ${e.message}`).join('; ');
+          skipped.push({ row: originalRow, reason });
         }
       }
 
-      // Check if any original rows in this batch were completely ignored/omitted by Claude
+      // Mark rows the AI silently dropped
       for (let idx = 0; idx < chunk.length; idx++) {
         const globalIdx = i + idx;
         if (!extractedIndexes.has(globalIdx)) {
           const originalRow = rawRows[globalIdx];
-          // Check if it's because the row lacks both email and mobile
-          const hasEmail = originalRow && (originalRow.email || originalRow.Email || Object.keys(originalRow).some(k => k.toLowerCase().includes('email') && originalRow[k]));
-          const hasPhone = originalRow && (originalRow.phone || originalRow.mobile || Object.keys(originalRow).some(k => (k.toLowerCase().includes('phone') || k.toLowerCase().includes('mobile') || k.toLowerCase().includes('contact')) && originalRow[k]));
-
-          let reason = 'AI skipped extraction: record missing key information';
-          if (!hasEmail && !hasPhone) {
-            reason = 'Record skipped: lacks both email and mobile/phone columns or values';
-          }
-
-          skipped.push({
-            row: originalRow,
-            reason
-          });
+          const hasEmail = originalRow && Object.keys(originalRow).some(k => k.toLowerCase().includes('email') && originalRow[k]);
+          const hasPhone = originalRow && Object.keys(originalRow).some(k => (k.toLowerCase().includes('phone') || k.toLowerCase().includes('mobile') || k.toLowerCase().includes('contact')) && originalRow[k]);
+          const reason = (!hasEmail && !hasPhone)
+            ? 'Record skipped: lacks both email and mobile/phone'
+            : 'AI skipped extraction: record missing key information';
+          skipped.push({ row: originalRow, reason });
         }
       }
     }
 
     if (onProgress) {
-      onProgress({
-        currentBatch: currentBatchNum,
-        totalBatches,
-        importedCount: imported.length,
-        skippedCount: skipped.length
-      });
+      onProgress({ currentBatch: currentBatchNum, totalBatches, importedCount: imported.length, skippedCount: skipped.length });
     }
   }
 
-  return {
-    imported,
-    skipped,
-    totalImported: imported.length,
-    totalSkipped: skipped.length
-  };
+  return { imported, skipped, totalImported: imported.length, totalSkipped: skipped.length };
 }
