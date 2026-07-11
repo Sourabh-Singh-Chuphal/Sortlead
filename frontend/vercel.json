@@ -1,0 +1,9 @@
+﻿{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm ci",
+  "env": {
+    "NEXT_PUBLIC_BACKEND_URL": "@sortlead_backend_url"
+  }
+}
