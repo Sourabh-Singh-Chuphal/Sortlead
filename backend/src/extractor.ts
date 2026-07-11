@@ -6,6 +6,7 @@ import { CrmRecordSchema, type CrmRecord } from './validator.js';
 dotenv.config();
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
+const geminiApiKey = process.env.GEMINI_API_KEY;
 const modelName = process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022';
 
 const anthropic = new Anthropic({
@@ -195,12 +196,102 @@ function localMockExtract(batchWithIndex: any[]): any[] {
 }
 
 /**
- * Call Claude to extract a batch of raw records.
+ * Call Gemini to extract a batch of raw records.
+ */
+async function extractBatchWithGemini(batchWithIndex: any[]): Promise<any[]> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
+
+  const prompt = `${SYSTEM_PROMPT}
+
+Here is the batch of raw records as JSON:
+${JSON.stringify(batchWithIndex, null, 2)}
+
+You MUST extract and normalize each record into the target CRM schema, preserving the "_original_index" exactly for each item.`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{ text: prompt }]
+      }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            records: {
+              type: 'ARRAY',
+              description: 'Array of extracted CRM records matching the input items.',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  _original_index: { type: 'INTEGER', description: 'The exact _original_index matching the raw record.' },
+                  created_at: { type: 'STRING', description: 'Lead creation date.' },
+                  name: { type: 'STRING', description: 'Name of the contact/lead.' },
+                  email: { type: 'STRING', description: 'Primary email address.' },
+                  country_code: { type: 'STRING', description: 'Country dial code, e.g. +91.' },
+                  mobile_without_country_code: { type: 'STRING', description: 'Mobile phone number without dial code.' },
+                  company: { type: 'STRING', description: 'Company name.' },
+                  city: { type: 'STRING', description: 'City.' },
+                  state: { type: 'STRING', description: 'State.' },
+                  country: { type: 'STRING', description: 'Country.' },
+                  lead_owner: { type: 'STRING', description: 'Owner assigned.' },
+                  crm_status: { type: 'STRING', description: 'One of GOOD_LEAD_FOLLOW_UP, DID_NOT_CONNECT, BAD_LEAD, SALE_DONE, or empty.' },
+                  crm_note: { type: 'STRING', description: 'Overflow data, remarks, or notes.' },
+                  data_source: { type: 'STRING', description: 'One of leads_on_demand, meridian_tower, eden_park, varah_swamy, sarjapur_plots, or empty.' },
+                  possession_time: { type: 'STRING', description: 'Timeline or date of possession.' },
+                  description: { type: 'STRING', description: 'Additional description.' }
+                },
+                required: ['_original_index']
+              }
+            }
+          }
+        }
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gemini API HTTP ${response.status}: ${errText}`);
+  }
+
+  const resJson: any = await response.json();
+  const text = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error('Gemini API returned an empty response candidate.');
+  }
+
+  const parsed = JSON.parse(text);
+  if (!parsed || !Array.isArray(parsed.records)) {
+    throw new Error('Gemini response did not contain records array.');
+  }
+
+  return parsed.records;
+}
+
+/**
+ * Call Claude or Gemini to extract a batch of raw records.
  * Retries up to 2x using p-retry.
  */
 async function extractBatchWithRetry(batchWithIndex: any[]): Promise<any[]> {
+  if (geminiApiKey && geminiApiKey !== 'mock' && geminiApiKey !== 'local' && !geminiApiKey.startsWith('your_')) {
+    return pRetry(
+      () => extractBatchWithGemini(batchWithIndex),
+      {
+        retries: 2,
+        onFailedAttempt: (error) => {
+          console.warn(`Gemini API attempt ${error.attemptNumber} failed. Error: ${error.message}`);
+        }
+      }
+    );
+  }
+
   if (!apiKey || apiKey === 'mock' || apiKey === 'local' || apiKey.startsWith('your_')) {
-    console.warn('[WARNING] ANTHROPIC_API_KEY is not configured. Using local rule-based fallback extractor.');
+    console.warn('[WARNING] ANTHROPIC_API_KEY and GEMINI_API_KEY are not configured. Using local rule-based fallback extractor.');
     return localMockExtract(batchWithIndex);
   }
 

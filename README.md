@@ -63,9 +63,13 @@ A high-performance, stateless full-stack CSV importer built for modern CRM syste
    ```bash
    cp .env.example .env
    ```
-   Add your Anthropic API Key:
+   Add your API Key (Either Anthropic or Gemini):
    ```env
+   # Option A: Anthropic Claude API Key
    ANTHROPIC_API_KEY=your_actual_anthropic_api_key_here
+
+   # Option B: Google Gemini API Key (Free - Get at https://aistudio.google.com/)
+   GEMINI_API_KEY=your_gemini_api_key_here
    ```
 4. Start the development server (runs on `http://localhost:5000`):
    ```bash
