@@ -1,0 +1,4 @@
+Full Name,e-mail ID,Contact No.,Company Name,Source,crm_status,Date Created,remarks
+Alice Jones,alice@example.com,+1 555-0192,Acme Corp,leads_on_demand,GOOD_LEAD_FOLLOW_UP,2026-07-10T10:00:00Z,Interested in sales
+Bob Smith,bob@example.com,+91 98765 43210,Alpha Inc,eden_park,SALE_DONE,2026-07-11T09:15:00Z,Closed deal
+Charlie Brown,charlie@example.com,,Omega Ltd,meridian_tower,DID_NOT_CONNECT,2026-07-09T14:20:00Z,No answer

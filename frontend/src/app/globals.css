@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #14161F;
+  --paper: #F6F4EF;
+  --ink-muted: #4B4E5C;
+  --paper-muted: #B9BAC4;
+  --match: #2FD895;
+  --review: #F5A623;
+  --skip: #EF6461;
+  --line: rgba(20, 22, 31, 0.08);
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans), sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Scrollbar styles for the preview and results tables */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(20, 22, 31, 0.15);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(20, 22, 31, 0.3);
+}
+
+/* Highlight connection glow */
+.match-glow {
+  box-shadow: 0 0 15px var(--match);
+  border-color: var(--match) !important;
+}
+
+/* Base custom classes */
+.focus-ring {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px rgba(20, 22, 31, 0.15);
+}

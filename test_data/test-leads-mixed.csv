@@ -1,0 +1,4 @@
+Full Name,e-mail ID,Contact No.,Company Name,Source,crm_status,Date Created,remarks
+David Miller,david@example.com,,Delta LLC,invalid_source,INVALID_STATUS,2026-07-08T11:00:00Z,This should map with blank status and source
+Eva Green,,,Secret Agency,eden_park,GOOD_LEAD_FOLLOW_UP,2026-07-07T08:30:00Z,This should be skipped because email and phone are missing
+Frank Wright,,+1 555-0144,Beta Ltd,sarjapur_plots,BAD_LEAD,2026-07-06T15:45:00Z,This has only phone and should be imported
