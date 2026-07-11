@@ -47,7 +47,7 @@ const extractTool = {
   name: 'extract_crm_records',
   description: 'Extract and normalize CRM records from arbitrary raw CSV rows.',
   input_schema: {
-    type: 'object',
+    type: 'object' as const,
     properties: {
       records: {
         type: 'array',
@@ -92,7 +92,7 @@ const extractTool = {
     },
     required: ['records']
   }
-};
+} as const;
 
 /**
  * Call Claude to extract a batch of raw records.
