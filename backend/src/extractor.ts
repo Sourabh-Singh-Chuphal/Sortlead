@@ -199,8 +199,8 @@ function localMockExtract(batchWithIndex: any[]): any[] {
  * Retries up to 2x using p-retry.
  */
 async function extractBatchWithRetry(batchWithIndex: any[]): Promise<any[]> {
-  if (!apiKey) {
-    console.warn('[WARNING] ANTHROPIC_API_KEY is not defined. Using local rule-based fallback extractor for testing.');
+  if (!apiKey || apiKey === 'mock' || apiKey === 'local' || apiKey.startsWith('your_')) {
+    console.warn('[WARNING] ANTHROPIC_API_KEY is not configured. Using local rule-based fallback extractor.');
     return localMockExtract(batchWithIndex);
   }
 
