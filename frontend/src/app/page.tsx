@@ -19,6 +19,16 @@ type Stage = 'upload' | 'preview' | 'importing' | 'results';
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
 
 export default function Home() {
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  React.useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
   const [stage, setStage] = useState<Stage>('upload');
   const [fileName, setFileName] = useState<string>('');
   const [parsedRows, setParsedRows] = useState<any[]>([]);
@@ -237,11 +247,19 @@ Priya Singh,priya.singh@example.com,+91,9876543213,Enterprise Corp,Pune,Maharash
             Sortlead
           </span>
         </div>
-        <div className="flex items-center space-x-2">
-          <span className="h-2 w-2 rounded-full bg-match animate-pulse" />
-          <span className="text-[10px] font-mono text-ink-muted uppercase tracking-wider">
-            Stateless AI Engine v1.0
-          </span>
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="border border-line px-2.5 py-1 rounded text-[10px] font-mono font-medium hover:bg-line/20 transition-all uppercase tracking-wider"
+          >
+            Theme: {isDarkMode ? 'Dark' : 'Light'}
+          </button>
+          <div className="flex items-center space-x-2">
+            <span className="h-2 w-2 rounded-full bg-match animate-pulse" />
+            <span className="text-[10px] font-mono text-ink-muted uppercase tracking-wider">
+              Stateless AI Engine v1.0
+            </span>
+          </div>
         </div>
       </header>
 

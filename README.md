@@ -102,3 +102,47 @@ cd backend
 docker build -t crm-csv-importer-backend .
 docker run -p 5000:5000 --env ANTHROPIC_API_KEY="your_api_key" crm-csv-importer-backend
 ```
+
+---
+
+## Cloud Hosting & Deployment Guide
+
+This project is structured as a monorepo, making it easy to deploy the backend and frontend separately.
+
+### 1. Push Code to GitHub
+
+First, publish the local git repository to your GitHub account:
+1. Create a new, empty repository on GitHub named `crm-csv-importer`.
+2. Link the repository and push your commits:
+   ```bash
+   git remote add origin https://github.com/<your-username>/crm-csv-importer.git
+   git branch -M main
+   git push -u origin main
+   ```
+
+### 2. Deploy Backend on Render
+
+Deploy the Node/Express backend using Render's native Docker build support:
+1. Log in to [Render.com](https://render.com) and click **New > Web Service**.
+2. Select your GitHub repository.
+3. Configure the service settings:
+   - **Name**: `crm-csv-importer-backend`
+   - **Runtime**: `Docker` (Render will auto-detect `/backend/Dockerfile` since it resides in the directory)
+   - **Root Directory**: `backend` (Important: Set this to `backend`!)
+4. Add your **Environment Variables**:
+   - `ANTHROPIC_API_KEY`: `your_anthropic_api_key`
+   - `NODE_ENV`: `production`
+5. Click **Create Web Service**. Once built, copy your service's URL (e.g., `https://crm-csv-importer-backend.onrender.com`).
+
+### 3. Deploy Frontend on Vercel
+
+Deploy the Next.js app to Vercel:
+1. Log in to [Vercel.com](https://vercel.com) and click **Add New > Project**.
+2. Select your GitHub repository.
+3. Configure the project:
+   - **Framework Preset**: `Next.js`
+   - **Root Directory**: Click *Edit* and select the `frontend` folder.
+4. Add your **Environment Variables**:
+   - `NEXT_PUBLIC_BACKEND_URL`: Set this to your Render backend URL (e.g., `https://crm-csv-importer-backend.onrender.com`).
+5. Click **Deploy**. Vercel will build and host the frontend. Open the provided Vercel URL to access your live production app!
+

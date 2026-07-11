@@ -13,6 +13,14 @@
   --line: rgba(20, 22, 31, 0.08);
 }
 
+.dark {
+  --ink: #F6F4EF;
+  --paper: #14161F;
+  --ink-muted: #B9BAC4;
+  --paper-muted: #4B4E5C;
+  --line: rgba(246, 244, 239, 0.08);
+}
+
 body {
   background-color: var(--paper);
   color: var(--ink);
